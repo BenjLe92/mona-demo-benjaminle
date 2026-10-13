@@ -4,93 +4,107 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-mona-demo-benjaminle matches small businesses with relevant grant and loan opportunities, using three provided CSV datasets as the only data source.
+mona-demo-benjaminle matches small businesses with grants and loans they may qualify for, using three CSV datasets in `data/` as the only data source. A user picks one of the business profiles and sees ranked opportunities, each with an eligibility status, a relevance score, and the reasons for both.
 
-This is a greenfield MVP with a **three-hour development budget**. The goal is a working end-to-end slice (CSV → matching API → UI showing ranked matches with reasons), not breadth. When in doubt, pick the simpler option and finish the vertical slice first.
-
-Priorities, in order: working end-to-end flow, explainable matching, tests on the matching logic, maintainability. Polish comes last.
-
-## Status
-
-Nothing is scaffolded yet. The layout and commands below are the agreed targets; update this file if the real setup diverges. The CSV datasets have not been added, so their columns are unknown — inspect the actual files before writing loaders or models, and never guess at a schema.
-
-## Stack
-
-- Frontend: React + TypeScript + Vite, tested with Vitest
-- Backend: Python + FastAPI, tested with Pytest
-- Data: local CSV files loaded at startup (no database)
-
-## Target layout
-
-```
-backend/
-  app/
-    api/        # FastAPI routers: HTTP only, no business logic
-    domain/     # Pydantic models + matching rules: pure Python, no I/O
-    data/       # CSV loading, validation, normalization
-    main.py
-  tests/
-frontend/
-  src/
-    api/        # typed client for the backend
-    components/
-    types/      # mirrors backend response models
-data/           # the three provided CSVs, read-only
-```
+It is an MVP built to a three-hour budget. Prefer the simpler option and keep the end-to-end flow working. There is no database, no authentication, and no AI or ML in the matching.
 
 ## Commands
 
-Backend (run from `backend/`):
+The shell is Windows PowerShell 5.1: chain commands with `;`, not `&&`. Writing files with `Set-Content -Encoding utf8` adds a byte-order mark that breaks `package.json`.
+
+Backend (run from `backend/`; the virtualenv is `backend/.venv`):
 
 ```
-pip install -r requirements.txt
-uvicorn app.main:app --reload          # http://localhost:8000, docs at /docs
-pytest                                 # all tests
-pytest tests/test_matching.py::test_name   # single test
+python -m venv .venv ; .venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000    # docs at /docs
+.venv\Scripts\python -m pytest -q                                    # all tests
+.venv\Scripts\python -m pytest tests/test_ranking.py::test_local_score   # one test
 ```
 
 Frontend (run from `frontend/`):
 
 ```
 npm install
-npm run dev                            # http://localhost:5173
-npm run test                           # Vitest
-npx vitest run src/path/file.test.ts -t "test name"   # single test
-npm run build                          # type-check + production build
+npm run dev        # http://localhost:5173, proxies /api to port 8000
+npm run test       # Vitest, run mode
+npx vitest run src/components/MatchCard.test.tsx -t "labels status"   # one test
+npm run build      # tsc type-check + production build
+npm run lint       # oxlint
 ```
 
-The shell is Windows PowerShell 5.1: chain commands with `;`, not `&&`.
+Environment variables read by the backend:
 
-## Architecture rules
+- `MONA_AS_OF_DATE` (`YYYY-MM-DD`): pins "today" for deadline checks. Defaults to the current date. Set it for reproducible demos and tests.
+- `MONA_DATA_DIR`: overrides the CSV folder. Defaults to `data/` at the repo root.
 
-- **Dependencies point inward.** `api` → `domain` ← `data`. The `domain` package imports neither FastAPI nor file/CSV code, so matching can be unit-tested with plain in-memory objects.
-- **CSV parsing happens once, at the edge.** `data/` turns raw rows into validated domain models (trimmed strings, parsed numbers/dates, normalized categories). Nothing outside `data/` touches raw rows or column names.
-- **Bad rows are reported, not silently dropped.** Skip a row that fails validation, but log it with its file and row number.
-- **Load CSVs once at startup** and hold them in memory; inject them into routes via FastAPI dependencies so tests can substitute fixtures.
-- **The frontend holds no matching logic.** It renders what the API returns, including the explanations.
+## Architecture
 
-## Explainable matching
+```
+backend/app/
+  api/routes.py     HTTP only: query params, filtering, paging, response envelopes
+  domain/           pure Python, no file or FastAPI imports
+    models.py         BusinessProfile, Grant, LoanOffer, NumericRange, TriState
+    results.py        RuleResult, Eligibility, Relevance, Match, compare_minimum, build_eligibility
+    grant_eligibility.py / loan_eligibility.py    hard requirements
+    ranking.py        relevance scoring for grants and loans
+    config.py         every scoring weight and threshold
+    matcher.py        runs eligibility + ranking, sorts
+  data/             the only place raw CSV rows and column names appear
+    loaders.py        CSV -> domain models, with a LoadReport per file
+    normalize.py      cell text -> bands, locations, amounts, state rules
+    requirements.py   free-text grant criteria -> hard requirements
+    mappings.py       states, metro aliases, industry map (plain data)
+    repository.py     in-memory store loaded once at startup
+frontend/src/
+  api/client.ts  types/api.ts  components/  format.ts
+```
 
-Every match must be able to say why it was returned. This is the core product requirement, so it shapes the design:
+Dependencies point inward: `api` and `data` import `domain`; `domain` imports neither. Domain models are Pydantic models and are returned directly as API responses, so `frontend/src/types/api.ts` must be updated by hand when they change.
 
-- Matching is **deterministic and rule-based**: no ML models, embeddings, or LLM calls.
-- Split rules into **eligibility filters** (hard pass/fail, e.g. location or business-size limits) and **scoring criteria** (weighted, contribute to ranking).
-- Each rule is a small, separately testable function that returns its outcome together with a human-readable reason.
-- A match result carries the total score plus the per-rule breakdown: which criteria matched, which did not, and the reason text for each. The UI shows this breakdown.
-- Weights and thresholds live in one named config module, not scattered as literals.
-- Missing data in a CSV field is an explicit "unknown" outcome with its own reason, never treated as a silent match or a silent failure.
+The frontend holds no matching logic. It renders the statuses, scores and reason strings the API returns.
 
-## Standards
+## Matching rules
 
-- Python: type hints on all functions, Pydantic models for anything crossing the API boundary.
-- TypeScript: `strict` mode, no `any`; API response types defined once in `frontend/src/types`.
-- Keep the API surface small and typed with response models, so `/docs` stays an accurate contract.
-- Add a dependency only when it saves clear time within the budget.
+These were agreed with the project owner. Do not change them without asking.
+
+**Scope (applied at load time)**
+
+- Grant index rows are kept only if `Type of Support` includes Grant, Reimbursement, Award(s) or Pitch Competition. Resources, accelerators, investments, fellowships, scholarships, tax credits and loan-type rows are excluded, as are rows whose amount says there is no cash award.
+- Closed rows are dropped. Coming Soon rows are kept but returned in their own bucket, never mixed with actionable results.
+- Open rows with a past **fixed** deadline are left out at match time. Rolling and recurring programmes with a past date stay, with a warning.
+- Loans come from the loan index. A lender becomes one offer, or one offer per product where the CSV gives per-product minimums (Biz2Credit: MCA and term loans).
+
+**Eligibility and relevance are independent.** `ranking.py` never reads an eligibility result, and eligibility never reads a score. Every match carries both, each with its own explanation.
+
+**Eligibility** is a list of rule results (`pass`, `fail`, `needs_verification`, `not_applicable`), each with a human-readable reason:
+
+- any fail → `ineligible`
+- otherwise any needs-verification → `needs_verification`
+- otherwise → `likely_eligible`
+
+The top status is "Likely Eligible", never "Eligible": only some requirements can be checked, and every result says so in its warnings.
+
+- **Unknown is not no.** A blank business attribute is `TriState.UNKNOWN` or a `None` band, and produces `needs_verification`.
+- **Bands versus minimums** (`compare_minimum`): whole band at or above the minimum passes, whole band below fails, a band that straddles it is borderline and needs verification.
+- **Free text** (`requirements.py`): only clearly stated ownership, nonprofit/for-profit and physical-location requirements become hard rules, and each quotes its source sentence. Sentences that read as preferences ("encouraged", "priority", "including") create nothing. Revenue, employee and tenure limits written in prose are not parsed; the full criteria text is shown instead. When in doubt, do not create a requirement.
+- **Industry is a ranking factor, not a filter.** A grant listed only under "Nonprofit" asks a for-profit business to verify; it never fails it.
+- **Locations and industries use explicit tables** in `mappings.py`. Grant cities are matched through metro aliases (Brooklyn → NYC). Add to the tables; do not add fuzzy matching.
+
+**Relevance** is a 0–100 sum of weighted components defined in `domain/config.py` (grants: industry, audience, local, timing, use of funds; loans: use of funds, qualification headroom, cost, timing). A test asserts the weights total 100. Results sort by status, then score, then deadline, then name.
+
+## Data notes
+
+- The grant index has no ID column; grants are `G-0001`… by file position, so IDs change if rows are reordered.
+- Business revenue and credit score mix bands with raw numbers; a raw number becomes a single-point band.
+- Invalid rows are skipped and recorded in the file's `LoadReport`, which `/api/meta` exposes. Scope exclusions are counted separately from skipped rows.
 
 ## Testing
 
-- Put most test effort into `domain/` matching rules: one test per rule covering match, non-match, and missing-data cases, plus a few ranking tests over small hand-built fixtures.
-- Test CSV loading against small fixture files in `backend/tests/fixtures/`, not the full datasets.
-- One or two API tests through FastAPI's `TestClient` to cover the wiring.
-- Frontend: test the components that render match results and explanations; skip tests for trivial presentational markup.
-- A feature is done when its tests pass and it works through the UI against the real CSVs.
+- Rule, ranking and normalizer tests use in-memory objects built by `make_business`, `make_grant` and `make_offer` in `backend/tests/conftest.py`.
+- Loader and API tests use the small CSVs in `backend/tests/fixtures/`, never the real datasets. The fixture files share the real file names because the loaders look them up by name.
+- API tests pin the date by overriding the `get_as_of` dependency.
+- A new rule needs pass, fail and missing-data cases. A new free-text pattern needs a case that must match and an incidental mention that must not.
+
+## Project skills
+
+`.claude/skills/` holds `/analyze`, `/plan`, `/implement`, `/review` and `/verify`. All are invoked explicitly.

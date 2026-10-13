@@ -1,0 +1,12 @@
+Name,Description,Amount,Deadline,Deadline Type,Location,Type of Support,Website / Application Link,Eligibility Criteria / Additional Info,Application Status,Industry,Application Fee
+National Food Grant,Funds food businesses.,"up to $10,000",11/15/2026,,US,Grant,https://example.org/food,Any US small business.,Open,Food & Beverage,None
+Closed Grant,Old round.,"$5,000",1/15/2026,,US,Grant,https://example.org/closed,,Closed,All,
+Advice Only,Free help.,,,rolling,US,Resources,https://example.org/advice,,Open,All,
+ Chicago Women Grant ,For Chicago founders.,"$5,000",,rolling,IL (Chicago),"Grant,Resources",https://example.org/chicago,'- Must be at least 51% woman-owned.,Open,"All,Brick-and-Mortar",$20
+No Cash Award,Coaching.,free advising (no cash award),,rolling,US,Grant,https://example.org/nocash,,Open,All,
+Bad Deadline Grant,Typo in date.,"$1,000",sometime soon,,US,Grant,https://example.org/bad,,Open,All,
+Expired Grant,Deadline has passed.,"$2,000",10/1/2026,,US,Grant,https://example.org/expired,,Open,All,
+Upcoming Pitch,Opens later.,"$25,000",12/1/2026,,NY,Pitch Competition,https://example.org/pitch,,Coming Soon,Technology,
+Fellowship Only,Not in scope.,"$30,000",12/1/2026,,US,Fellowship,https://example.org/fellow,,Open,All,
+,No name.,"$1,000",,,US,Grant,https://example.org/noname,,Open,All,
+Nonprofit Fund,For charities.,"$15,000",,annually,US,Grant,https://example.org/np,Must be a 501(c)(3) organization.,Open,Nonprofit,

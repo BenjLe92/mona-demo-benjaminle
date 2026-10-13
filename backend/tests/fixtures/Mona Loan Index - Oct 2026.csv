@@ -1,0 +1,6 @@
+Lender,Products,Referral Link,Eligible States,Min credit score,Min annual revenue,Min years in business,Loan sizes,Interest rates,Loan terms
+Kiva,Term loans (0% interest),https://example.org/kiva,"All except ND, NV",None,$0 (startups welcomed),0,$1k - $15k,0% (fixed),12 to 36 months
+Biz2Credit,Term loans; MCAs; lines of credit,https://example.org/biz2,All,575 (MCA); 650 (term),"$250,000.00",1 (MCA); 1.5 (term),,,
+Lendistry,Term loans; SBA 7(a) term loans,https://example.org/lendistry,"All except ND, SD",640 (ideally 680),YoY revenue/cash flow growth trend for two years,2,$25k - $5M,WSJ Prime + 2-6% (variable),36 to 60 months
+Honeycomb,Term loans (crowdfunded),https://example.org/honeycomb,All,620 (some exceptions),,,$20k - $500k,6% to 14%,36 to 60 months
+No Link Lender,Term loans,,All,600,,,,,

@@ -1,0 +1,6 @@
+profile_id,city,state,country,industry,time_in_business,annual_revenue_usd_or_range,credit_score_or_range,funding_uses,funding_timing,business_type,employee_count_or_range,woman_founder_eligibility,black_founder_eligibility,bipoc_founder_eligibility,veteran_founder_eligibility,nonprofit_eligibility,brick_and_mortar_eligibility
+MONA-0001,CHICAGO,Illinois,United States,Food & Beverage,2-3 years,"$100,000 - $249,999",680 - 719,Inventory; Hiring and payroll,Within a month,Limited Liability Company (LLC),2 to 5 employees,Eligible,Not eligible,Not eligible,Not eligible,Not eligible,Eligible
+MONA-0002,Brooklyn,New York,United States,,,,,,,Retail,,,Eligible,,,,
+MONA-0003,Nowhere,Atlantis,United States,Retail,1 year,20000,600 - 649,Inventory,Within a week,Sole Proprietor,1 employee,Eligible,Eligible,Eligible,Not eligible,Not eligible,Eligible
+MONA-0001,Detroit,Michigan,United States,Retail,1 year,20000,600 - 649,Inventory,Within a week,Sole Proprietor,1 employee,Eligible,Eligible,Eligible,Not eligible,Not eligible,Eligible
+MONA-0004,Santa Fe,New Mexico,United States,"Education, Underwater Basketry",More than 5 years,420000,720 or above,Vehicles,"Unsure, just browsing rates",Nonprofit Corporation,,,Not eligible,,,,
