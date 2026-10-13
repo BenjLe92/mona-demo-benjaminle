@@ -10,11 +10,15 @@ function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [profile, setProfile] = useState<BusinessProfile | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
     fetchBusinesses(controller.signal)
-      .then(setBusinesses)
+      .then((loaded) => {
+        setBusinesses(loaded)
+        setError(null)
+      })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setError(reason instanceof Error ? reason.message : 'Could not load businesses.')
@@ -27,23 +31,36 @@ function App() {
     if (!selectedId) return
     const controller = new AbortController()
     fetchBusiness(selectedId, controller.signal)
-      .then(setProfile)
+      .then((loaded) => {
+        setProfile(loaded)
+        setError(null) // a successful load clears any earlier failure message
+      })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setError(reason instanceof Error ? reason.message : 'Could not load the business profile.')
         }
       })
     return () => controller.abort()
-  }, [selectedId])
+  }, [selectedId, attempt])
+
+  function selectBusiness(profileId: string) {
+    setSelectedId(profileId)
+    setAttempt((count) => count + 1) // refetch even when the same business is picked again after a failure
+    setError(null) // the message belonged to the previous request
+  }
 
   return (
     <div className="layout">
       <aside className="sidebar">
         <h1>Mona funding matcher</h1>
         {businesses ? (
-          <BusinessPicker businesses={businesses} selectedId={selectedId} onSelect={setSelectedId} />
+          <BusinessPicker businesses={businesses} selectedId={selectedId} onSelect={selectBusiness} />
         ) : (
-          !error && <p className="empty">Loading businesses…</p>
+          !error && (
+            <p className="empty" role="status">
+              Loading businesses…
+            </p>
+          )
         )}
       </aside>
       <main className="main">
@@ -54,6 +71,11 @@ function App() {
         )}
         {!selectedId && !error && (
           <p className="empty">Select a business to see the grants and loans it may qualify for.</p>
+        )}
+        {selectedId && profile?.profile_id !== selectedId && !error && (
+          <p className="empty" role="status">
+            Loading business profile…
+          </p>
         )}
         {selectedId && profile?.profile_id === selectedId && (
           <>

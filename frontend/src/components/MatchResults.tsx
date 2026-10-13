@@ -5,7 +5,6 @@ import type { EligibilityStatus, MatchBucket, MatchResponse, StatusCounts } from
 import { MatchCard } from './MatchCard'
 
 const PAGE_SIZE = 25
-const MAX_LIMIT = 100 // the API's upper bound for `limit`
 const TABS: { bucket: MatchBucket; label: string }[] = [
   { bucket: 'grant', label: 'Grants' },
   { bucket: 'loan', label: 'Loans' },
@@ -21,39 +20,48 @@ export function MatchResults({ profileId }: { profileId: string }) {
   const [bucket, setBucket] = useState<MatchBucket>('grant')
   const [status, setStatus] = useState<EligibilityStatus | null>(null)
   const [includeIneligible, setIncludeIneligible] = useState(false)
-  const [limit, setLimit] = useState(PAGE_SIZE)
+  // `offset` is where the next page starts; `attempt` lets a failed page be requested again.
+  const [page, setPage] = useState({ offset: 0, attempt: 0 })
   const [data, setData] = useState<MatchResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchMatches(profileId, { kind: bucket, status, includeIneligible, limit }, controller.signal)
+    const query = { kind: bucket, status, includeIneligible, limit: PAGE_SIZE, offset: page.offset }
+    fetchMatches(profileId, query, controller.signal)
       .then((response) => {
-        setData(response)
+        // Later pages are appended to the cards already shown.
+        setData((shown) =>
+          page.offset === 0 || !shown ? response : { ...response, results: [...shown.results, ...response.results] },
+        )
         setError(null)
         setLoading(false)
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return
+        // A failed first page leaves nothing valid to show; a failed later page keeps the cards.
+        if (page.offset === 0) setData(null)
         setError(reason instanceof Error ? reason.message : 'Could not load matches.')
         setLoading(false)
       })
     return () => controller.abort()
-  }, [profileId, bucket, status, includeIneligible, limit])
+  }, [profileId, bucket, status, includeIneligible, page])
 
   function changeView(update: () => void) {
     update()
-    setLimit(PAGE_SIZE)
+    setPage({ offset: 0, attempt: 0 })
     setLoading(true)
   }
 
   function showMore() {
-    setLimit(Math.min(limit + PAGE_SIZE, MAX_LIMIT))
+    setPage((current) => ({ offset: data?.results.length ?? 0, attempt: current.attempt + 1 }))
     setLoading(true)
   }
 
   const counts = data?.counts[bucket]
+  // Loading a new view replaces the cards; loading a further page only adds to them.
+  const loadingView = loading && page.offset === 0
 
   return (
     <section className="results">
@@ -113,20 +121,22 @@ export function MatchResults({ profileId }: { profileId: string }) {
           {error}
         </p>
       )}
-      {!error && data && data.results.length === 0 && !loading && (
-        <p className="empty">No opportunities match these filters.</p>
+      {loadingView && (
+        <p className={data ? 'loading-note' : 'empty'} role="status">
+          Loading matches…
+        </p>
       )}
-      {!error && data && (
-        <div className={loading ? 'cards loading' : 'cards'}>
+      {data && data.results.length === 0 && !loading && <p className="empty">No opportunities match these filters.</p>}
+      {data && (
+        <div className={loadingView ? 'cards loading' : 'cards'}>
           {data.results.map((match) => (
             <MatchCard key={match.opportunity_id} match={match} />
           ))}
         </div>
       )}
-      {!error && !data && loading && <p className="empty">Loading matches…</p>}
-      {!error && data && data.results.length < data.total && limit < MAX_LIMIT && (
-        <button type="button" className="more" onClick={showMore}>
-          Show more ({data.results.length} of {data.total})
+      {data && !loadingView && data.results.length < data.total && (
+        <button type="button" className="more" onClick={showMore} disabled={loading}>
+          {loading ? 'Loading more…' : `Show more (${data.results.length} of ${data.total})`}
         </button>
       )}
     </section>

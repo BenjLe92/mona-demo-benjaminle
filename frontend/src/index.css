@@ -93,6 +93,8 @@ button, input, select { font: inherit; }
 .long-text { white-space: pre-wrap; font-size: 0.88rem; color: var(--muted); overflow-wrap: anywhere; }
 
 .empty { color: var(--muted); padding: 24px 0; }
+.loading-note { color: var(--muted); font-size: 0.9rem; margin-bottom: 8px; }
+.more:disabled { cursor: progress; color: var(--muted); }
 .error { padding: 10px 12px; background: var(--bad-bg); color: var(--bad); border-radius: 6px; margin-bottom: 12px; }
 .more { margin-top: 12px; padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
 

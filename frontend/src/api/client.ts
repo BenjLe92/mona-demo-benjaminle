@@ -29,6 +29,7 @@ export interface MatchQuery {
   status: EligibilityStatus | null
   includeIneligible: boolean
   limit: number
+  offset: number
 }
 
 export function fetchMatches(profileId: string, query: MatchQuery, signal?: AbortSignal): Promise<MatchResponse> {
@@ -36,6 +37,7 @@ export function fetchMatches(profileId: string, query: MatchQuery, signal?: Abor
     kind: query.kind,
     include_ineligible: String(query.includeIneligible),
     limit: String(query.limit),
+    offset: String(query.offset),
   })
   if (query.status) params.set('status', query.status)
   return get(`/api/businesses/${encodeURIComponent(profileId)}/matches?${params}`, signal)
