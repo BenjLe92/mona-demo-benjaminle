@@ -21,7 +21,7 @@ def test_health(client):
 def test_meta_reports_loaded_and_skipped_rows(client):
     body = client.get("/api/meta").json()
     assert body["as_of"] == "2026-10-13"
-    assert (body["businesses"], body["grants"], body["loan_offers"]) == (3, 5, 5)
+    assert (body["businesses"], body["grants"], body["loan_offers"]) == (3, 7, 5)
     grant_file = next(f for f in body["files"] if "Grant" in f["file"])
     assert grant_file["excluded"]["closed"] == 1 and len(grant_file["skipped"]) == 2
 
@@ -46,14 +46,17 @@ def test_matches_default_hides_ineligible_and_expired(client):
     assert "Expired Grant" not in names and "Closed Grant" not in names
     assert all(m["eligibility"]["status"] != "ineligible" for m in body["results"])
     assert body["total"] == len(body["results"])
-    assert body["counts"]["grant"] == {"likely_eligible": 2, "needs_verification": 0, "ineligible": 1}
+    assert body["counts"]["grant"] == {"likely_eligible": 2, "needs_verification": 2, "ineligible": 1}
     assert body["counts"]["coming_soon"]["ineligible"] == 1
 
 
 def test_match_explains_eligibility_and_relevance(client):
     body = client.get("/api/businesses/MONA-0001/matches", params={"kind": "grant"}).json()
     # The local, woman-owned, brick-and-mortar grant outranks the national industry grant.
-    assert [m["name"] for m in body["results"]] == ["Chicago Women Grant", "National Food Grant"]
+    # Grants with something left to verify always sort after the ones with nothing left.
+    assert [m["name"] for m in body["results"]] == [
+        "Chicago Women Grant", "National Food Grant", "Revenue Cap Grant", "Silent Grant",
+    ]
     top = body["results"][1]
     assert top["eligibility"]["status"] == "likely_eligible"
     assert all(check["reason"] for check in top["eligibility"]["checks"])
@@ -67,6 +70,21 @@ def test_match_explains_eligibility_and_relevance(client):
         "founder_requirement": "pass",
     }
     assert chicago["criteria_text"] == "- Must be at least 51% woman-owned."
+
+
+def test_unparsed_and_absent_criteria_surface_as_needs_verification(client):
+    body = client.get("/api/businesses/MONA-0001/matches", params={"status": "needs_verification"}).json()
+    by_name = {m["name"]: m["eligibility"] for m in body["results"]}
+
+    capped = by_name["Revenue Cap Grant"]
+    assert capped["summary"] == (
+        "Passed: location. To verify: annual revenue requirement; employee count requirement; time in business requirement."
+    )
+    assert [c["rule"] for c in capped["checks"]] == ["location", "unchecked_revenue", "unchecked_employees", "unchecked_tenure"]
+    assert "Your profile shows: $100,000 - $249,999." in capped["checks"][1]["reason"]
+
+    silent = by_name["Silent Grant"]  # no criteria; its promotional description is not used
+    assert [c["rule"] for c in silent["checks"]] == ["location", "criteria_not_listed"]
 
 
 def test_unknown_attributes_surface_as_needs_verification(client):

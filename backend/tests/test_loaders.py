@@ -55,13 +55,38 @@ def test_sparse_business_keeps_unknowns_explicit(businesses):
     assert sparse.woman_owned is TriState.UNKNOWN
     assert sparse.business_type is None  # "Retail" is not a legal entity type
     assert sparse.nonprofit is TriState.UNKNOWN
-    assert sparse.bipoc_owned is TriState.YES  # derived from Black-owned
     assert {"Annual revenue", "Credit score", "Woman-owned", "Business type"} <= set(sparse.unknown_fields)
 
 
-def test_nonprofit_derived_from_entity_type_and_unmapped_industry_kept(businesses):
+def test_blank_bipoc_flag_is_not_inferred_from_black_owned(businesses):
+    sparse = businesses[0][1]
+    assert sparse.black_owned is TriState.YES
+    assert sparse.bipoc_owned is TriState.UNKNOWN
+    assert "BIPOC-owned" in sparse.unknown_fields
+
+
+def test_blank_nonprofit_flag_is_not_inferred_from_entity_type(businesses):
+    profiles = businesses[0]
+    nonprofit_corporation = profiles[2]
+    assert nonprofit_corporation.business_type == "Nonprofit Corporation"
+    assert nonprofit_corporation.nonprofit is TriState.UNKNOWN
+    assert "Nonprofit status" in nonprofit_corporation.unknown_fields
+
+    llc = profiles[0]
+    assert llc.business_type == "Limited Liability Company (LLC)"
+    assert llc.nonprofit is TriState.NO  # recorded explicitly in the row, not derived
+
+
+def test_llc_with_blank_nonprofit_flag_stays_unknown():
+    row = dict.fromkeys(loaders._BUSINESS_COLUMNS, "")
+    row.update(profile_id="MONA-X", city="Austin", state="Texas", business_type="Limited Liability Company (LLC)")
+    assert loaders.build_business(row).nonprofit is TriState.UNKNOWN
+    row["nonprofit_eligibility"] = "Eligible"  # the real data has an LLC flagged as a nonprofit
+    assert loaders.build_business(row).nonprofit is TriState.YES
+
+
+def test_unmapped_industry_kept(businesses):
     nonprofit = businesses[0][2]
-    assert nonprofit.nonprofit is TriState.YES
     assert nonprofit.industries == ["Education & Child Care"]
     assert nonprofit.unmapped_industries == ["Underwater Basketry"]
     assert (nonprofit.revenue.min, nonprofit.credit_score.max) == (420_000, None)
@@ -71,6 +96,7 @@ def test_grant_scope_and_status_filters(grants):
     loaded, report = grants
     assert [g.name for g in loaded] == [
         "National Food Grant", "Chicago Women Grant", "Expired Grant", "Upcoming Pitch", "Nonprofit Fund",
+        "Revenue Cap Grant", "Silent Grant",
     ]
     assert report.excluded == {"closed": 1, "support type out of scope": 2, "no cash award": 1}
     assert report.skipped == ["row 7: unparseable deadline 'sometime soon'", "row 11: missing name or link"]
@@ -92,6 +118,15 @@ def test_grant_normalization(grants):
     assert by_name["Nonprofit Fund"].deadline_kind == "recurring"
     assert [r.kind for r in by_name["Nonprofit Fund"].requirements] == ["nonprofit"]
     assert by_name["National Food Grant"].amount.max == 10_000
+
+
+def test_grant_unchecked_criteria_are_loaded(grants):
+    by_name = {g.name: g for g in grants[0]}
+    assert [c.topic for c in by_name["Revenue Cap Grant"].unchecked_criteria] == ["revenue", "employees", "tenure"]
+    assert by_name["Revenue Cap Grant"].criteria_say_who_qualifies is True
+    assert by_name["Silent Grant"].criteria_say_who_qualifies is False
+    assert by_name["National Food Grant"].unchecked_criteria == []
+    assert by_name["Chicago Women Grant"].unchecked_criteria == []  # its only criterion is evaluated
 
 
 def test_loans_expand_to_product_level_offers(loans):

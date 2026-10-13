@@ -94,17 +94,17 @@ def build_eligibility(checks: list[RuleResult], warnings: list[str]) -> Eligibil
     failed = [c for c in checks if c.outcome is Outcome.FAIL]
     unresolved = [c for c in checks if c.outcome is Outcome.NEEDS_VERIFICATION]
     passed = [c for c in checks if c.outcome is Outcome.PASS]
+    def names(checks: list[RuleResult]) -> str:
+        return "; ".join(dict.fromkeys(c.label.lower() for c in checks))
+
+    passed_part = f"Passed: {names(passed)}. " if passed else ""
     if failed:
         status = EligibilityStatus.INELIGIBLE
-        summary = "Does not meet: " + "; ".join(c.label.lower() for c in failed) + "."
+        summary = f"Does not meet: {names(failed)}."
     elif unresolved:
         status = EligibilityStatus.NEEDS_VERIFICATION
-        summary = "Needs verification: " + "; ".join(c.label.lower() for c in unresolved) + "."
+        summary = f"{passed_part}To verify: {names(unresolved)}."
     else:
         status = EligibilityStatus.LIKELY_ELIGIBLE
-        n = len(passed)
-        summary = (
-            f"Passes all {n} requirement{'s' if n != 1 else ''} we could check. "
-            "This is not a guarantee of eligibility."
-        )
+        summary = f"{passed_part}Nothing left to verify from the listing. This is not a guarantee of eligibility."
     return Eligibility(status=status, summary=summary, checks=checks, warnings=warnings)

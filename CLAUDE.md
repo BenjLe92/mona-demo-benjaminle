@@ -71,7 +71,7 @@ These were agreed with the project owner. Do not change them without asking.
 
 - Grant index rows are kept only if `Type of Support` includes Grant, Reimbursement, Award(s) or Pitch Competition. Resources, accelerators, investments, fellowships, scholarships, tax credits and loan-type rows are excluded, as are rows whose amount says there is no cash award.
 - Closed rows are dropped. Coming Soon rows are kept but returned in their own bucket, never mixed with actionable results.
-- Open rows with a past **fixed** deadline are left out at match time. Rolling and recurring programmes with a past date stay, with a warning.
+- Open rows whose listed date has passed are left out at match time, for fixed **and recurring** ("annually", "monthly") deadlines: a past date is never assumed to have renewed. Only rolling programmes with a past date stay, with a warning.
 - Loans come from the loan index. A lender becomes one offer, or one offer per product where the CSV gives per-product minimums (Biz2Credit: MCA and term loans).
 
 **Eligibility and relevance are independent.** `ranking.py` never reads an eligibility result, and eligibility never reads a score. Every match carries both, each with its own explanation.
@@ -85,8 +85,16 @@ These were agreed with the project owner. Do not change them without asking.
 The top status is "Likely Eligible", never "Eligible": only some requirements can be checked, and every result says so in its warnings.
 
 - **Unknown is not no.** A blank business attribute is `TriState.UNKNOWN` or a `None` band, and produces `needs_verification`.
+- **No inferred attributes.** Flags are loaded exactly as recorded. Never derive one from another flag (BIPOC from Black-owned) or from the legal entity type (an LLC is not assumed to be for-profit; the data has an LLC flagged as a nonprofit).
 - **Bands versus minimums** (`compare_minimum`): whole band at or above the minimum passes, whole band below fails, a band that straddles it is borderline and needs verification.
-- **Free text** (`requirements.py`): only clearly stated ownership, nonprofit/for-profit and physical-location requirements become hard rules, and each quotes its source sentence. Sentences that read as preferences ("encouraged", "priority", "including") create nothing. Revenue, employee and tenure limits written in prose are not parsed; the full criteria text is shown instead. When in doubt, do not create a requirement.
+- **Free text** (`requirements.py`) is parsed clause by clause for ownership, nonprofit/for-profit and physical-location requirements. Each clause is one of three things, and each requirement quotes its source:
+  - a firm rule ("must be 51% woman-owned") or an explicit exclusion ("for-profit businesses are ineligible", which requires the *other* entity type): `strict=True`, so a business that does not meet it fails;
+  - an ambiguous statement of who the grant is for ("open to women entrepreneurs", "per veteran entrepreneur", a group word in the programme name, a rule the listing contradicts elsewhere): `strict=False`, which gives Needs Verification and never fails anyone;
+  - a preference or incidental mention ("encouraged", "priority", "optional", a funder's or partner's name): nothing.
+
+  One clause can yield several requirements. When a new pattern is unsure, make it ambiguous, not firm.
+- **Stated but unevaluated criteria** (`criteria.py`): every clause in the criteria column counts as a requirement unless it is recognisably a "no requirement" statement, a preference, a process note, a sentence about the programme, a general "any small business" line, or something the matcher evaluates. What remains is flagged by topic (revenue, employees, tenure, personal, registration, area, other) and becomes a needs-verification check that quotes the clause. Nothing is interpreted: a revenue cap is never compared with the profile. A blank criteria column, or one holding only process notes, also needs verification. The description column is never used for this, so promotional text cannot downgrade a grant.
+- **Likely Eligible therefore means** every clause in the criteria column was evaluated and passed. It is rare for grants by design. Loans are unaffected, because their requirements are structured columns.
 - **Industry is a ranking factor, not a filter.** A grant listed only under "Nonprofit" asks a for-profit business to verify; it never fails it.
 - **Locations and industries use explicit tables** in `mappings.py`. Grant cities are matched through metro aliases (Brooklyn → NYC). Add to the tables; do not add fuzzy matching.
 
@@ -104,6 +112,7 @@ The top status is "Likely Eligible", never "Eligible": only some requirements ca
 - Loader and API tests use the small CSVs in `backend/tests/fixtures/`, never the real datasets. The fixture files share the real file names because the loaders look them up by name.
 - API tests pin the date by overriding the `get_as_of` dependency.
 - A new rule needs pass, fail and missing-data cases. A new free-text pattern needs a case that must match and an incidental mention that must not.
+- `backend/tests/test_grant_regressions.py` holds the wording of real grant records that were once misjudged, each checked with a qualifying and a non-qualifying business. Add to it whenever a real record is found to be parsed wrongly.
 
 ## Project skills
 

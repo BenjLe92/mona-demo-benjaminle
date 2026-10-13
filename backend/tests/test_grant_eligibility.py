@@ -112,7 +112,10 @@ def test_nonprofit_tag_alongside_industries_is_not_a_check():
         (date(2026, 10, 13), None, False),  # closes today: still open
         (date(2026, 11, 1), None, False),
         (date(2026, 9, 1), "rolling", False),
-        (date(2026, 9, 1), "annually", False),
+        (date(2026, 9, 1), "annually", True),  # a past recurring date is not assumed to have renewed
+        (date(2026, 10, 10), "monthly", True),
+        (date(2026, 11, 1), "annually", False),
+        (None, "annually", False),
         (None, "rolling", False),
         (None, None, False),
     ],
@@ -140,8 +143,40 @@ def test_every_grant_warns_that_checks_are_partial(as_of):
     assert "not a guarantee" in result.summary
 
 
-def test_stale_recurring_date_and_coming_soon_produce_warnings(as_of):
-    stale = make_grant(deadline=date(2026, 9, 1), deadline_type="annually")
+@pytest.mark.parametrize("flag", [TriState.NO, TriState.UNKNOWN])
+def test_ambiguous_founder_statement_never_fails(flag):
+    requirement = Requirement(kind="founder", groups=["woman"], strict=False, source="Open to women entrepreneurs.")
+    result = ge.check_founder_requirement(make_business(woman_owned=flag), requirement)
+    assert result.outcome is Outcome.NEEDS_VERIFICATION
+    assert "does not state it as a firm rule" in result.reason
+    assert ge.check_founder_requirement(make_business(woman_owned=TriState.YES), requirement).outcome is Outcome.PASS
+
+
+@pytest.mark.parametrize(
+    "kind, nonprofit, expected",
+    [
+        ("nonprofit", TriState.YES, Outcome.PASS),
+        ("nonprofit", TriState.NO, Outcome.NEEDS_VERIFICATION),
+        ("nonprofit", TriState.UNKNOWN, Outcome.NEEDS_VERIFICATION),
+        ("for_profit", TriState.NO, Outcome.PASS),
+        ("for_profit", TriState.YES, Outcome.NEEDS_VERIFICATION),
+        ("for_profit", TriState.UNKNOWN, Outcome.NEEDS_VERIFICATION),
+    ],
+)
+def test_ambiguous_entity_statement_never_fails(kind, nonprofit, expected):
+    requirement = Requirement(kind=kind, strict=False, source="Open to for-profit small businesses.")
+    assert ge.check_entity_requirement(make_business(nonprofit=nonprofit), requirement).outcome is expected
+
+
+def test_ambiguous_statement_makes_the_grant_need_verification_not_likely_eligible(as_of):
+    requirement = Requirement(kind="founder", groups=["veteran"], strict=False, source="Per veteran entrepreneur.")
+    grant = make_grant(requirements=[requirement])
+    assert ge.classify_grant(make_business(veteran_owned=TriState.NO), grant, as_of).status is EligibilityStatus.NEEDS_VERIFICATION
+    assert ge.classify_grant(make_business(veteran_owned=TriState.YES), grant, as_of).status is EligibilityStatus.LIKELY_ELIGIBLE
+
+
+def test_stale_rolling_date_and_coming_soon_produce_warnings(as_of):
+    stale = make_grant(deadline=date(2026, 9, 1), deadline_type="rolling")
     assert any("has passed" in w for w in ge.classify_grant(make_business(), stale, as_of).warnings)
     upcoming = make_grant(listing_status="coming_soon")
     assert "Applications are not open yet." in ge.classify_grant(make_business(), upcoming, as_of).warnings

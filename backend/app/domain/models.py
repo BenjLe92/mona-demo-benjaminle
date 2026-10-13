@@ -73,10 +73,25 @@ RequirementKind = Literal["founder", "nonprofit", "for_profit", "brick_and_morta
 
 
 class Requirement(BaseModel):
-    """A hard requirement clearly stated in a grant's text, with the sentence it came from."""
+    """A requirement found in a grant's text, with the wording it came from.
+
+    `strict=False` marks an ambiguous statement: a business that does not match is asked to
+    verify, never failed.
+    """
 
     kind: RequirementKind
     groups: list[FounderGroup] = []  # for kind="founder": any one of these satisfies it
+    strict: bool = True
+    source: str
+
+
+CriterionTopic = Literal["revenue", "employees", "tenure", "personal", "registration", "area", "other"]
+
+
+class UncheckedCriterion(BaseModel):
+    """A requirement the listing states but the matcher does not evaluate, with its wording."""
+
+    topic: CriterionTopic
     source: str
 
 
@@ -100,6 +115,9 @@ class Grant(BaseModel):
     all_industries: bool
     tags: list[str]  # non-industry tokens from the Industry column, e.g. "Nonprofit"
     requirements: list[Requirement]
+    unchecked_criteria: list[UncheckedCriterion] = []
+    # False when the criteria column is blank or holds only process notes (dates, fees, how to apply).
+    criteria_say_who_qualifies: bool = True
     eligibility_text: str
     application_fee: str | None
     url: str

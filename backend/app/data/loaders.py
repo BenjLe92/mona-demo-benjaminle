@@ -10,6 +10,7 @@ from pathlib import Path
 
 from app.data import mappings
 from app.data import normalize as n
+from app.data.criteria import review_criteria
 from app.data.requirements import extract_requirements
 from app.domain.models import BusinessProfile, Grant, LoanOffer, TriState
 
@@ -56,18 +57,6 @@ _BUSINESS_COLUMNS = {
 }
 
 
-def _nonprofit_state(flag: TriState, business_type: str | None) -> TriState:
-    """The explicit flag wins; otherwise the legal entity type decides."""
-    if flag is not TriState.UNKNOWN:
-        return flag
-    entity = mappings.ENTITY_TYPES.get(business_type or "")
-    if entity == "nonprofit":
-        return TriState.YES
-    if entity == "for_profit":
-        return TriState.NO
-    return TriState.UNKNOWN
-
-
 def build_business(row: dict[str, str]) -> BusinessProfile:
     """Raises ValueError when the row cannot identify or locate a business."""
     profile_id = n.clean(row["profile_id"])
@@ -82,11 +71,8 @@ def build_business(row: dict[str, str]) -> BusinessProfile:
     raw_type = n.clean(row["business_type"]) or None
     business_type = raw_type if raw_type in mappings.ENTITY_TYPES else None
 
-    black = n.parse_flag(row["black_founder_eligibility"])
-    bipoc = n.parse_flag(row["bipoc_founder_eligibility"])
-    if bipoc is TriState.UNKNOWN and black is TriState.YES:
-        bipoc = TriState.YES  # a Black-owned business is BIPOC-owned
-
+    # Flags are taken exactly as recorded. A blank stays unknown: nothing is inferred from
+    # another flag or from the legal entity type (the data has an LLC flagged as a nonprofit).
     profile = BusinessProfile(
         profile_id=profile_id,
         city=city,
@@ -108,10 +94,10 @@ def build_business(row: dict[str, str]) -> BusinessProfile:
         funding_timing=n.clean(row["funding_timing"]) or None,
         business_type=business_type,
         woman_owned=n.parse_flag(row["woman_founder_eligibility"]),
-        black_owned=black,
-        bipoc_owned=bipoc,
+        black_owned=n.parse_flag(row["black_founder_eligibility"]),
+        bipoc_owned=n.parse_flag(row["bipoc_founder_eligibility"]),
         veteran_owned=n.parse_flag(row["veteran_founder_eligibility"]),
-        nonprofit=_nonprofit_state(n.parse_flag(row["nonprofit_eligibility"]), business_type),
+        nonprofit=n.parse_flag(row["nonprofit_eligibility"]),
         brick_and_mortar=n.parse_flag(row["brick_and_mortar_eligibility"]),
         unknown_fields=[],
     )
@@ -208,6 +194,7 @@ def load_grants(path: Path) -> tuple[list[Grant], LoadReport]:
         description = n.clean_long_text(row["Description"])
         eligibility_text = n.clean_long_text(row["Eligibility Criteria / Additional Info"])
         industries, tags, is_all = n.split_grant_industries(row["Industry"])
+        unchecked, says_who_qualifies = review_criteria(eligibility_text)
         grants.append(
             Grant(
                 id=f"G-{index:04d}",
@@ -225,7 +212,9 @@ def load_grants(path: Path) -> tuple[list[Grant], LoadReport]:
                 industries=industries,
                 all_industries=is_all,
                 tags=tags,
-                requirements=extract_requirements(eligibility_text, description),
+                requirements=extract_requirements(eligibility_text, description, name),
+                unchecked_criteria=unchecked,
+                criteria_say_who_qualifies=says_who_qualifies,
                 eligibility_text=eligibility_text,
                 application_fee=n.clean(row["Application Fee"]) or None,
                 url=url,

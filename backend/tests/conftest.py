@@ -72,7 +72,7 @@ def make_grant(**overrides) -> Grant:
         all_industries=True,
         tags=[],
         requirements=[],
-        eligibility_text="",
+        eligibility_text="Open to small businesses.",  # blank would mean "no criteria listed"
         application_fee=None,
         url="https://example.org/grant",
     )

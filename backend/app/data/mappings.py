@@ -85,13 +85,15 @@ TIME_IN_BUSINESS = {
     "more than 5 years": (5.0, None),
 }
 
+# Recognised `business_type` values. Used only to reject non-entity values such as "Retail";
+# nonprofit status is never derived from the entity type.
 ENTITY_TYPES = {
-    "Limited Liability Company (LLC)": "for_profit",
-    "Sole Proprietor": "for_profit",
-    "C Corporation": "for_profit",
-    "S Corporation": "for_profit",
-    "Partnership": "for_profit",
-    "Nonprofit Corporation": "nonprofit",
+    "Limited Liability Company (LLC)",
+    "Sole Proprietor",
+    "C Corporation",
+    "S Corporation",
+    "Partnership",
+    "Nonprofit Corporation",
 }
 
 # Grant `Type of Support` tokens that put a row in scope.

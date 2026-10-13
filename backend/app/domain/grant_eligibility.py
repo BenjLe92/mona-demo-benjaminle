@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.domain.models import BusinessProfile, Grant, Requirement, TriState
+from app.domain.models import BusinessProfile, Grant, Requirement, TriState, UncheckedCriterion
 from app.domain.results import Eligibility, Outcome, RuleResult, build_eligibility
 
 GROUP_LABELS = {"woman": "woman-owned", "black": "Black-owned", "bipoc": "minority/BIPOC-owned", "veteran": "veteran-owned"}
@@ -12,14 +12,18 @@ _GROUP_FIELDS = {"woman": "woman_owned", "black": "black_owned", "bipoc": "bipoc
 _STATE_WORDS = {TriState.YES: "yes", TriState.NO: "no", TriState.UNKNOWN: "not on file"}
 
 UNCHECKED_CRITERIA_WARNING = (
-    "Only location and clearly stated ownership or entity requirements were checked. "
+    "Only location, ownership and entity-type requirements are checked automatically. "
     "Read the full criteria before applying."
 )
 
 
 def is_expired(grant: Grant, as_of: date) -> bool:
-    """A fixed deadline in the past. Rolling and recurring programmes are never treated as expired."""
-    return grant.deadline_kind == "fixed" and grant.deadline is not None and grant.deadline < as_of
+    """The listed date has passed and nothing shows the grant is open again.
+
+    A recurring programme ("annually") is expired too: the index gives no date for the next
+    cycle, so a past date is not assumed to have renewed. Only rolling programmes stay open.
+    """
+    return grant.deadline_kind in ("fixed", "recurring") and grant.deadline is not None and grant.deadline < as_of
 
 
 def check_location(business: BusinessProfile, grant: Grant) -> RuleResult:
@@ -56,6 +60,19 @@ def _quote(requirement: Requirement) -> str:
     return f' Stated as: "{requirement.source}"'
 
 
+def _unconfirmed(base: dict, wanted: str, on_file: bool, requirement: Requirement) -> RuleResult:
+    """An ambiguous statement the business does not clearly meet: ask, never fail."""
+    profile = "your profile says it is not" if on_file else "this is not on file for your profile"
+    return RuleResult(
+        **base,
+        outcome=Outcome.NEEDS_VERIFICATION,
+        reason=(
+            f"The listing suggests this is for a {wanted}, but does not state it as a firm rule; "
+            f"{profile}. Confirm before applying." + _quote(requirement)
+        ),
+    )
+
+
 def check_founder_requirement(business: BusinessProfile, requirement: Requirement) -> RuleResult:
     states = {group: getattr(business, _GROUP_FIELDS[group]) for group in requirement.groups}
     wanted = " or ".join(GROUP_LABELS[g] for g in requirement.groups)
@@ -63,8 +80,12 @@ def check_founder_requirement(business: BusinessProfile, requirement: Requiremen
     base = dict(rule="founder_requirement", label=f"Ownership: {wanted}", required=wanted, actual=actual)
     if TriState.YES in states.values():
         met = next(GROUP_LABELS[g] for g, s in states.items() if s is TriState.YES)
-        return RuleResult(**base, outcome=Outcome.PASS, reason=f"Requires a {wanted} business; yours is {met}." + _quote(requirement))
-    if all(s is TriState.NO for s in states.values()):
+        verb = "Requires" if requirement.strict else "Appears to be for"
+        return RuleResult(**base, outcome=Outcome.PASS, reason=f"{verb} a {wanted} business; yours is {met}." + _quote(requirement))
+    all_no = all(s is TriState.NO for s in states.values())
+    if not requirement.strict:
+        return _unconfirmed(base, f"{wanted} business", all_no, requirement)
+    if all_no:
         return RuleResult(**base, outcome=Outcome.FAIL, reason=f"Requires a {wanted} business; your profile says it is not." + _quote(requirement))
     return RuleResult(
         **base,
@@ -78,11 +99,15 @@ def check_entity_requirement(business: BusinessProfile, requirement: Requirement
     wanted = "nonprofit organization" if wants_nonprofit else "for-profit business"
     actual = {TriState.YES: "nonprofit", TriState.NO: "for-profit", TriState.UNKNOWN: "not on file"}[business.nonprofit]
     base = dict(rule="entity_requirement", label=f"Entity type: {wanted}", required=wanted, actual=actual)
-    if business.nonprofit is TriState.UNKNOWN:
-        return RuleResult(**base, outcome=Outcome.NEEDS_VERIFICATION, reason=f"Requires a {wanted}; your entity type is not on file." + _quote(requirement))
-    matches = (business.nonprofit is TriState.YES) == wants_nonprofit
+    known = business.nonprofit is not TriState.UNKNOWN
+    matches = known and (business.nonprofit is TriState.YES) == wants_nonprofit
     if matches:
-        return RuleResult(**base, outcome=Outcome.PASS, reason=f"Requires a {wanted}; yours is one." + _quote(requirement))
+        verb = "Requires" if requirement.strict else "Appears to be for"
+        return RuleResult(**base, outcome=Outcome.PASS, reason=f"{verb} a {wanted}; yours is one." + _quote(requirement))
+    if not requirement.strict:
+        return _unconfirmed(base, wanted, known, requirement)
+    if not known:
+        return RuleResult(**base, outcome=Outcome.NEEDS_VERIFICATION, reason=f"Requires a {wanted}; whether your business is a nonprofit is not on file." + _quote(requirement))
     return RuleResult(**base, outcome=Outcome.FAIL, reason=f"Requires a {wanted}; your business is {actual}." + _quote(requirement))
 
 
@@ -119,6 +144,49 @@ def check_nonprofit_listing(business: BusinessProfile, grant: Grant) -> RuleResu
     )
 
 
+_TOPIC_LABELS = {
+    "revenue": ("Annual revenue requirement", "annual revenue"),
+    "employees": ("Employee count requirement", "the number of employees"),
+    "tenure": ("Time in business requirement", "time in business"),
+    "personal": ("Age, residency or citizenship", "the applicant's age, residency or citizenship"),
+    "registration": ("Licensing, registration or standing", "licensing, registration or legal standing"),
+    "area": ("Area or income designation", "a specific area or income designation"),
+    "other": ("Other stated criteria", "something else"),
+}
+
+
+def check_unchecked_criterion(business: BusinessProfile, criterion: UncheckedCriterion) -> RuleResult:
+    """A requirement the listing states but that is not evaluated: always needs verification."""
+    label, subject = _TOPIC_LABELS[criterion.topic]
+    on_profile = {
+        "revenue": business.revenue_label,
+        "employees": business.employees_label,
+        "tenure": business.years_in_business_label,
+    }
+    actual = on_profile.get(criterion.topic) or ("not on file" if criterion.topic in on_profile else None)
+    compare = f" Your profile shows: {actual}." if actual else ""
+    return RuleResult(
+        rule=f"unchecked_{criterion.topic}",
+        label=label,
+        outcome=Outcome.NEEDS_VERIFICATION,
+        actual=actual,
+        reason=f'The listing sets a requirement on {subject} that is not checked automatically.{compare} Stated as: "{criterion.source}"',
+    )
+
+
+def check_criteria_listed(grant: Grant) -> RuleResult | None:
+    """A listing that does not say who qualifies cannot establish eligibility beyond its location."""
+    if grant.criteria_say_who_qualifies:
+        return None
+    gap = "gives no eligibility criteria" if not grant.eligibility_text else "covers how to apply but not who qualifies"
+    return RuleResult(
+        rule="criteria_not_listed",
+        label="Eligibility criteria not listed",
+        outcome=Outcome.NEEDS_VERIFICATION,
+        reason=f"The listing {gap}, so only its location could be checked. Confirm the requirements before applying.",
+    )
+
+
 _REQUIREMENT_CHECKS = {
     "founder": check_founder_requirement,
     "nonprofit": check_entity_requirement,
@@ -133,6 +201,11 @@ def classify_grant(business: BusinessProfile, grant: Grant, as_of: date) -> Elig
     listing = check_nonprofit_listing(business, grant)
     if listing:
         checks.append(listing)
+    # Anything the listing requires but we cannot evaluate keeps the grant out of Likely Eligible.
+    checks += [check_unchecked_criterion(business, c) for c in grant.unchecked_criteria]
+    missing = check_criteria_listed(grant)
+    if missing:
+        checks.append(missing)
 
     warnings = [UNCHECKED_CRITERIA_WARNING]
     if grant.listing_status == "coming_soon":
